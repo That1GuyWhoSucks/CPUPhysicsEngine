@@ -3,6 +3,12 @@ project(CPUPhysicsEngine C)
 
 set(CMAKE_C_STANDARD 11)
 
+set(CMAKE_WIN32_EXECUTABLE 1)
+
+ADD_COMPILE_OPTIONS(/fp:fast)
+
+enable_language(ASM_MASM)
+
 add_executable(CPUPhysicsEngine
         main.c
         main.h
@@ -20,4 +26,9 @@ add_executable(CPUPhysicsEngine
         Triangle.h
         WindowsFuckery.c
         WindowsFuckery.h
+        Object.c
+        Object.h
+        ExpandableArray.c
+        ExpandableArray.h
+        invsqrt.asm
 )

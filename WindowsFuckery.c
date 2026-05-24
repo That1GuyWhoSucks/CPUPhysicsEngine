@@ -1,25 +1,62 @@
-#include <windows.h>
+#include <windows.h> // >:(
+
 #include "Renderer.h"
 #include "main.h"
 #include "Constants.h"
 
 HDC g_memDC;
+static const RECT CENTER = {SCREEN_WIDTH_HALF, SCREEN_HEIGHT_HALF, SCREEN_WIDTH_HALF, SCREEN_HEIGHT_HALF};
 
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK WindowProc(HWND hwnd, const UINT uMsg, WPARAM wParam, const LPARAM lParam) {
+
     switch (uMsg) {
+        case WM_SETFOCUS: {
+            ClipCursor(&CENTER);
+            ShowCursor(0);
+            return 0;
+        }
+        case WM_KILLFOCUS: {
+            ClipCursor(NULL);
+            ShowCursor(1);
+            return 0;
+        }
+        case WM_INPUT: { // gets mouse stuff
+            UINT dwSize = sizeof(RAWINPUT);
+            static BYTE lpb[sizeof(RAWINPUT)];
+
+            GetRawInputData((HRAWINPUT)lParam, RID_INPUT, lpb, &dwSize, sizeof(RAWINPUTHEADER));
+            const RAWINPUT* raw = (RAWINPUT*)lpb;
+
+            if (raw->header.dwType == RIM_TYPEMOUSE) {
+                const RAWMOUSE mouse = raw->data.mouse;
+                if (mouse.usFlags & MOUSE_MOVE_ABSOLUTE) {
+
+                } else if (mouse.lLastX != 0 || mouse.lLastY != 0) {
+                    RendererOnMouse(mouse.lLastX, mouse.lLastY);
+                }
+            }
+            return 0;
+        }
         case WM_PAINT: {
-            RendererRender();
+            if (working) return 1; // if polled while working don't draw to avoid reading half finished stuff
+            working = 1; // currently just bails, could make it wait idk
             PAINTSTRUCT paint;
             HDC hWndDc = BeginPaint(hwnd, &paint);
             BitBlt(hWndDc, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,
                    g_memDC, 0, 0, SRCCOPY);
+            working = 0;
             EndPaint(hwnd, &paint);
             return 0;
         } case WM_DESTROY: {
             PostQuitMessage(0);
             return 0;
-        } case WM_CHAR: {
-            RendererOnInput(wParam);
+        } case WM_KEYDOWN: {
+            RendererOnKeyDown(wParam);
+            TranslateMessage((MSG*) &wParam);
+            return 0;
+        } case WM_KEYUP: {
+            RendererOnKeyUp(wParam);
+            TranslateMessage((MSG*) &wParam);
             return 0;
         } default: {
             return DefWindowProc(hwnd, uMsg, wParam, lParam);
@@ -27,7 +64,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     }
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine, int nCmdShow) {
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine, const int nShowCmd) {
+    RAWINPUTDEVICE Rid[1]; // to get raw mouse
+    Rid[0].usUsagePage = 0x01;
+    Rid[0].usUsage = 0x02;
+    Rid[0].dwFlags = RIDEV_NOLEGACY;
+    Rid[0].hwndTarget = 0;
+    if (!RegisterRawInputDevices(Rid, 1, sizeof(Rid[0]))) {
+        return 1;
+    }
     static const char CLASS_NAME[] = "Sample Window Class";
     WNDCLASS wc = {};
     wc.lpfnWndProc = WindowProc;
@@ -39,7 +84,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
         CLASS_NAME,
         "FUCK YOU WINDOWS",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, SCREEN_WIDTH, SCREEN_HEIGHT,
+        0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,
 
         NULL,
         NULL,
@@ -65,11 +110,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
     ReleaseDC(hwnd, hdc);
 
     Init(&hwnd, pixelMap);
-    ShowWindow(hwnd, nCmdShow);
+    ShowWindow(hwnd, nShowCmd);
     MSG msg = {};
     while (GetMessage(&msg, NULL, 0, 0) > 0) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
+        if (SUICIDE_FLAG) {
+            break;
+        }
     }
     Destroy();
     return 0;
